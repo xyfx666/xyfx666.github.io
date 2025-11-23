@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>蛋白浓度标准曲线分析</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 引入数学公式字体 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+</head>
+<body class="bg-gray-50 min-h-screen font-sans text-gray-800">
+
+    <!-- 顶部导航 -->
+    <nav class="bg-blue-600 text-white shadow-lg">
+        <div class="max-w-5xl mx-auto px-4 py-4">
+            <h1 class="text-xl font-bold flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-flask-conical"><path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/></svg>
+                BCA/Bradford 蛋白浓度标准曲线
+            </h1>
+        </div>
+    </nav>
+
+    <div class="max-w-5xl mx-auto px-4 py-8">
+        
+        <!-- 主要布局：左侧图表，右侧数据和工具 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- 左侧：图表区域 -->
+            <div class="lg:col-span-2 space-y-6">
+                <!-- 图表卡片 -->
+                <div class="bg-white p-4 rounded-xl shadow-md border border-gray-100">
+                    <h2 class="text-lg font-semibold mb-4 text-gray-700 border-l-4 border-blue-500 pl-3">标准曲线图 (A540 vs Concentration)</h2>
+                    <div class="relative h-80 w-full">
+                        <canvas id="standardCurveChart"></canvas>
+                    </div>
+                    <!-- 拟合结果展示 -->
+                    <div class="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-100 text-center">
+                        <p class="text-blue-800 font-medium text-lg" id="equationDisplay">正在计算...</p>
+                        <p class="text-blue-600 text-sm" id="r2Display">R² = ...</p>
+                    </div>
+                </div>
+
+                <!-- 计算器卡片 -->
+                <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100">
+                    <h2 class="text-lg font-semibold mb-4 text-gray-700 border-l-4 border-green-500 pl-3">未知样品浓度计算器</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                        <div>
+                            <label for="inputAbsorbance" class="block text-sm font-medium text-gray-600 mb-1">输入样品 A540 吸光度</label>
+                            <input type="number" id="inputAbsorbance" step="0.001" placeholder="例如: 0.450" 
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                        </div>
+                        <div>
+                            <button onclick="calculateConcentration()" 
+                                class="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition shadow-sm flex justify-center items-center gap-2">
+                                计算浓度
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- 计算结果 -->
+                    <div id="calcResult" class="hidden mt-4 pt-4 border-t border-gray-100">
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">计算结果 (浓度):</span>
+                            <span class="text-2xl font-bold text-green-700" id="resultValue">0.00 mg/mL</span>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-1 text-right">基于上述线性回归方程计算</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：数据表 -->
+            <div class="lg:col-span-1">
+                <div class="bg-white p-4 rounded-xl shadow-md border border-gray-100 h-full">
+                    <h2 class="text-lg font-semibold mb-4 text-gray-700 border-l-4 border-purple-500 pl-3">原始实验数据</h2>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left text-gray-600">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                <tr>
+                                    <th scope="col" class="px-3 py-3">管号</th>
+                                    <th scope="col" class="px-3 py-3">浓度 (mg/mL)</th>
+                                    <th scope="col" class="px-3 py-3">A540</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dataTableBody">
+                                <!-- 数据将通过JS插入 -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="mt-6 text-xs text-gray-400 p-3 bg-gray-50 rounded border border-gray-100">
+                        <p class="font-semibold mb-1">统计摘要:</p>
+                        <p>点数 (N): 6</p>
+                        <p>方法: 最小二乘法线性回归</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <footer class="mt-8 text-center text-gray-400 text-xs">
+            生成于 Gemini 实验室助手
+        </footer>
+    </div>
+
+    <script>
+        // 1. 原始数据 (Raw Data)
+        const rawData = [
+            { id: 1, x: 0, y: 0.094 },
+            { id: 2, x: 3.0, y: 0.214 },
+            { id: 3, x: 6.0, y: 0.337 },
+            { id: 4, x: 9.0, y: 0.483 },
+            { id: 5, x: 12.0, y: 0.586 },
+            { id: 6, x: 15.0, y: 0.689 }
+        ];
+
+        let slope = 0;
+        let intercept = 0;
+
+        // 2. 线性回归算法 (Linear Regression Algorithm)
+        function performLinearRegression(data) {
+            const n = data.length;
+            let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+
+            data.forEach(point => {
+                sumX += point.x;
+                sumY += point.y;
+                sumXY += (point.x * point.y);
+                sumXX += (point.x * point.x);
+            });
+
+            const slopeVal = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+            const interceptVal = (sumY - slopeVal * sumX) / n;
+
+            // 计算 R平方
+            const yMean = sumY / n;
+            let ssTot = 0, ssRes = 0;
+            data.forEach(point => {
+                const yPred = slopeVal * point.x + interceptVal;
+                ssTot += Math.pow(point.y - yMean, 2);
+                ssRes += Math.pow(point.y - yPred, 2);
+            });
+            const r2 = 1 - (ssRes / ssTot);
+
+            return { m: slopeVal, b: interceptVal, r2: r2 };
+        }
+
+        // 3. 初始化页面
+        document.addEventListener('DOMContentLoaded', function() {
+            // 填充表格
+            const tbody = document.getElementById('dataTableBody');
+            rawData.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.className = "bg-white border-b hover:bg-gray-50";
+                tr.innerHTML = `
+                    <td class="px-3 py-2 font-medium text-gray-900">${row.id}</td>
+                    <td class="px-3 py-2">${row.x.toFixed(1)}</td>
+                    <td class="px-3 py-2">${row.y.toFixed(3)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // 执行回归
+            const result = performLinearRegression(rawData);
+            slope = result.m;
+            intercept = result.b;
+
+            // 更新UI显示公式
+            const sign = result.b >= 0 ? '+' : '-';
+            document.getElementById('equationDisplay').innerText = `y = ${result.m.toFixed(4)}x ${sign} ${Math.abs(result.b).toFixed(4)}`;
+            document.getElementById('r2Display').innerText = `R² = ${result.r2.toFixed(4)}`;
+
+            // 准备图表数据
+            // 为了让线画得更长一点，我们在0和16之间画线
+            const lineStart = { x: 0, y: result.b };
+            const lineEnd = { x: 16, y: result.m * 16 + result.b };
+
+            const ctx = document.getElementById('standardCurveChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        {
+                            label: '实验数据点',
+                            data: rawData,
+                            backgroundColor: 'rgba(59, 130, 246, 0.8)', // Blue-500
+                            borderColor: 'rgba(37, 99, 235, 1)', // Blue-600
+                            borderWidth: 1,
+                            pointRadius: 6,
+                            pointHoverRadius: 8
+                        },
+                        {
+                            type: 'line',
+                            label: '线性拟合',
+                            data: [lineStart, lineEnd],
+                            borderColor: 'rgba(220, 38, 38, 0.8)', // Red-600
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += `(${context.parsed.x}, ${context.parsed.y})`;
+                                    }
+                                    return label;
+                                }
+                            }
+                        },
+                        legend: {
+                            position: 'top',
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            position: 'bottom',
+                            title: {
+                                display: true,
+                                text: '蛋白浓度 (mg/mL)',
+                                font: { weight: 'bold' }
+                            },
+                            min: -1,
+                            max: 16
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: '吸光度 (A540)',
+                                font: { weight: 'bold' }
+                            },
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        });
+
+        // 4. 计算功能
+        function calculateConcentration() {
+            const yInput = parseFloat(document.getElementById('inputAbsorbance').value);
+            const resultDiv = document.getElementById('calcResult');
+            const resultVal = document.getElementById('resultValue');
+
+            if (isNaN(yInput)) {
+                alert("请输入有效的吸光度数值");
+                return;
+            }
+
+            // x = (y - b) / m
+            if (slope === 0) {
+                alert("斜率为0，无法计算");
+                return;
+            }
+
+            const concentration = (yInput - intercept) / slope;
+            
+            resultDiv.classList.remove('hidden');
+            resultVal.innerText = concentration.toFixed(3) + " mg/mL";
+            
+            // 如果结果为负，提醒用户
+            if (concentration < 0) {
+                resultVal.classList.remove('text-green-700');
+                resultVal.classList.add('text-red-600');
+                resultVal.innerText += " (数值异常)";
+            } else {
+                resultVal.classList.remove('text-red-600');
+                resultVal.classList.add('text-green-700');
+            }
+        }
+    </script>
+</body>
+</html>
+
