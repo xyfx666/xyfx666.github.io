@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TCX 轨迹生成器</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        body {
+            background-color: #f8fafc;
+        }
+
+        /* Z-index fix for map controls */
+        .leaflet-top,
+        .leaflet-bottom {
+            z-index: 999 !important;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- Built-in Icons ---
+        const Icons = {
+            Activity: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>,
+            Plus: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>,
+            Download: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></svg>,
+            FileCode: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><path d="m10 13-2 2 2 2" /><path d="m14 17 2-2-2-2" /></svg>,
+            Play: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3" /></svg>,
+            RefreshCw: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg>,
+            Upload: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" x2="12" y1="3" y2="15" /></svg>,
+            Zap: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>,
+            ToggleLeft: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="12" x="2" y="6" rx="6" ry="6" /><circle cx="8" cy="12" r="2" /></svg>,
+            ToggleRight: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="12" x="2" y="6" rx="6" ry="6" /><circle cx="16" cy="12" r="2" /></svg>,
+            X: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>,
+            Sparkles: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /><path d="M5 3v4" /><path d="M9 3v4" /><path d="M2 7h4" /><path d="M2 3h4" /></svg>,
+            Loader2: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>,
+            Layers: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" /><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65" /><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" /></svg>,
+            Calendar: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2" /><line x1="16" x2="16" y1="2" y2="6" /><line x1="8" x2="8" y1="2" y2="6" /><line x1="3" x2="21" y1="10" y2="10" /></svg>,
+            Copy: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>,
+            KeyRound: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 18v3c0 .6.4 1 1 1h4v-3h3v-3h2l1.4-1.4a6.5 6.5 0 1 0-4-4Z" /><circle cx="16.5" cy="7.5" r=".5" fill="currentColor" /></svg>,
+            Clock: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>,
+            Repeat: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></svg>,
+            Route: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="19" r="3" /><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15" /><circle cx="18" cy="5" r="3" /></svg>,
+            Bot: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" /></svg>,
+            MapPin: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" /><circle cx="12" cy="10" r="3" /></svg>,
+            Trash2: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" x2="10" y1="11" y2="17" /><line x1="14" x2="14" y1="11" y2="17" /></svg>
+        };
+
+        const {
+            Trash2, Plus, Download, FileCode, Activity, Play, RefreshCw, Upload, Zap,
+            ToggleLeft, ToggleRight, X, Sparkles, Loader2, Layers, Calendar, Copy,
+            KeyRound, Clock, Repeat, Route, Bot, MapPin
+        } = Icons;
+
+        // --- Helper Functions ---
+
+        const formatTime = (date) => date.toISOString();
+        const generateId = () => Math.random().toString(36).substr(2, 9);
+
+        const getDistanceFromLatLonInM = (lat1, lon1, lat2, lon2) => {
+            const R = 6371000;
+            const dLat = (lat2 - lat1) * (Math.PI / 180);
+            const dLon = (lon2 - lon1) * (Math.PI / 180);
+            const a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        };
+
+        const addDays = (date, days) => {
+            const result = new Date(date);
+            result.setDate(result.getDate() + days);
+            return result;
+        };
+
+        // --- API Calls ---
+
+        const callGeminiForRoute = async (prompt, startCoords, userApiKey) => {
+            const apiKey = userApiKey || "";
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const systemPrompt = `
+                You are a GPS route generator. User will provide a description of a route.
+                Generate a sequence of GPS coordinates (latitude, longitude) that approximate this path.
+                Return ONLY a valid JSON array of objects. Each object must have 'lat' (number) and 'lon' (number).
+                Generate between 10 and 30 points. Do not wrap the JSON in markdown. Return raw JSON only.
+            `;
+            const fullPrompt = startCoords ? `Start near ${startCoords}. ${prompt}` : prompt;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: fullPrompt }] }],
+                        systemInstruction: { parts: [{ text: systemPrompt }] }
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error?.message || 'API Error');
+                let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+                text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+                return JSON.parse(text);
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                throw error;
+            }
+        };
+
+        const callGeminiForLapStrategy = async (laps, description, userApiKey) => {
+            const apiKey = userApiKey || "";
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const prompt = `
+                Generate a running strategy for ${laps} laps based on this style: "${description}".
+                Return a JSON ARRAY of length ${laps}.
+                Each item: { "speed_factor": number (1.0 normal, >1 faster), "hr_offset": number (+/- bpm), "drift_factor": number (1.0 normal) }.
+                Return RAW JSON only.
+            `;
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                });
+                const data = await response.json();
+                let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+                text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+                return JSON.parse(text);
+            } catch (error) {
+                console.error("Gemini Lap API Error:", error);
+                return null;
+            }
+        };
+
+        const callGeminiForTrainingSchedule = async (startDate, endDate, description, userApiKey) => {
+            const apiKey = userApiKey || "";
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const prompt = `
+                Create a daily running training schedule from ${startDate} to ${endDate} based on this goal: "${description}".
+                Return a JSON ARRAY. Each item: { "date": "YYYY-MM-DD", "intensity_factor": number (1.0 normal, 1.2 hard), "notes": "string" }.
+                Return RAW JSON only.
+            `;
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                });
+                const data = await response.json();
+                let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+                text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+                return JSON.parse(text);
+            } catch (error) {
+                console.error("Gemini Batch API Error:", error);
+                return null;
+            }
+        };
+
+        // --- Map Picker Component (Fullscreen) ---
+        const MapPicker = ({ onClose }) => {
+            const mapRef = useRef(null);
+            const [points, setPoints] = useState([]);
+            const [isMapReady, setIsMapReady] = useState(false);
+
+            useEffect(() => { setIsMapReady(true); }, []);
+
+            useEffect(() => {
+                if (isMapReady && !mapRef.current) {
+                    const L = window.L;
+                    const map = L.map('map-container').setView([39.9042, 116.4074], 16);
+
+                    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                        attribution: 'Tiles &copy; Esri'
+                    }).addTo(map);
+
+                    const markerGroup = L.layerGroup().addTo(map);
+                    const polyline = L.polyline([], { color: '#ffff00', weight: 3 }).addTo(map);
+
+                    map.on('click', (e) => {
+                        const { lat, lng } = e.latlng;
+                        const newPoint = { lat: lat.toFixed(6), lon: lng.toFixed(6) };
+                        setPoints(prev => {
+                            const updated = [...prev, newPoint];
+                            markerGroup.clearLayers();
+                            const latlngs = updated.map(p => [p.lat, p.lon]);
+                            updated.forEach((p, idx) => {
+                                L.marker([p.lat, p.lon]).bindPopup(`Point ${idx + 1}`).addTo(markerGroup);
+                            });
+                            polyline.setLatLngs(latlngs);
+                            return updated;
+                        });
+                    });
+                    mapRef.current = map;
+                }
+            }, [isMapReady]);
+
+            const exportText = points.map((p, i) => `${i + 1}. ${p.lat}, ${p.lon}`).join('\n');
+            const copyToClipboard = () => {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(exportText).catch(() => fallbackCopy(exportText));
+                } else { fallbackCopy(exportText); }
+            };
+            const fallbackCopy = (text) => {
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try { document.execCommand('copy'); } catch (err) { }
+                document.body.removeChild(textArea);
+            };
+
+            // Changed to fixed inset-0 for Full Screen
+            return (
+                <div className="fixed inset-0 z-[100] bg-white flex flex-col animate-in fade-in duration-200">
+                    <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 shadow-sm z-10">
+                        <h3 className="text-lg font-semibold flex items-center gap-2 text-slate-800">
+                            <Icons.MapPin size={18} className="text-red-500" />
+                            地图选点工具 (卫星视图)
+                        </h3>
+                        <button onClick={onClose} className="text-slate-500 hover:text-slate-800 bg-slate-200 hover:bg-slate-300 px-3 py-1 rounded text-sm transition-colors">关闭窗口</button>
+                    </div>
+                    <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+                        <div className="flex-1 relative bg-slate-900" id="map-container">
+                            {!isMapReady && <div className="absolute inset-0 flex items-center justify-center text-slate-400 gap-2"><Icons.Loader2 className="animate-spin" /> 加载地图...</div>}
+                        </div>
+                        <div className="w-full md:w-80 bg-white border-l border-slate-200 flex flex-col shadow-xl z-10">
+                            <div className="p-4 bg-slate-50 border-b border-slate-100">
+                                <h4 className="text-sm font-medium text-slate-700">已选坐标 ({points.length})</h4>
+                            </div>
+                            <div className="flex-1 p-4">
+                                <textarea readOnly value={exportText} className="w-full h-full p-3 text-xs font-mono border border-slate-200 rounded bg-slate-50 resize-none focus:outline-none text-slate-600" placeholder="点击地图选点..." />
+                            </div>
+                            <div className="p-4 border-t border-slate-100 flex gap-2">
+                                <button onClick={() => { setPoints([]); if (mapRef.current) { mapRef.current.eachLayer(l => (l instanceof window.L.Marker || l instanceof window.L.Polyline) && l.remove()); } }} className="px-3 py-2 text-slate-600 hover:bg-slate-100 rounded text-sm">清空</button>
+                                <button onClick={copyToClipboard} className="flex-1 px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded text-sm font-medium flex items-center justify-center gap-2"><Icons.Copy size={14} /> 复制结果</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [sport, setSport] = useState('Running');
+            const [startTime, setStartTime] = useState(new Date().toISOString().slice(0, 16));
+            const [points, setPoints] = useState([]);
+            const [xmlOutput, setXmlOutput] = useState('');
+            const [userApiKey, setUserApiKey] = useState(() => { try { return localStorage.getItem('gemini_api_key') || ''; } catch (e) { return ''; } });
+            useEffect(() => { try { localStorage.setItem('gemini_api_key', userApiKey); } catch (e) { } }, [userApiKey]);
+            const [enableHR, setEnableHR] = useState(true);
+            const [showImport, setShowImport] = useState(false);
+            const [importText, setImportText] = useState('');
+            const [showAIRouteModal, setShowAIRouteModal] = useState(false);
+            const [aiRoutePrompt, setAiRoutePrompt] = useState('');
+            const [isGeneratingRoute, setIsGeneratingRoute] = useState(false);
+            const [showBatchModal, setShowBatchModal] = useState(false);
+            const [batchConfig, setBatchConfig] = useState({ startDate: new Date().toISOString().slice(0, 10), endDate: addDays(new Date(), 7).toISOString().slice(0, 10), baseTime: "07:00", timeRandomness: 30, intervalDays: 1, jitterLevel: 'medium', useAI: false, aiPrompt: "马拉松赛前一周减量训练", distanceVariance: 0, minDistance: 0 });
+            const [batchResults, setBatchResults] = useState([]);
+            const [isGeneratingBatch, setIsGeneratingBatch] = useState(false);
+            const [showLoopModal, setShowLoopModal] = useState(false);
+            const [loopConfig, setLoopConfig] = useState({ laps: 5, targetPace: "", laneDrift: true, gpsNoise: true, useAI: false, aiPrompt: "前3圈热身，后2圈冲刺" });
+            const [isGeneratingLoop, setIsGeneratingLoop] = useState(false);
+            const [showMapPicker, setShowMapPicker] = useState(false);
+
+            const generateTCXString = (customPoints = null, customStartTime = null) => {
+                const targetPoints = customPoints || points;
+                const targetStartTimeStr = customStartTime ? customStartTime.toISOString() : new Date(startTime).toISOString();
+                const totalTimeSeconds = targetPoints.length > 1 ? (new Date(targetPoints[targetPoints.length - 1].time) - new Date(targetPoints[0].time)) / 1000 : 0;
+                const totalDist = targetPoints.length > 0 ? targetPoints[targetPoints.length - 1].dist : 0;
+                let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<TrainingCenterDatabase xsi:schemaLocation="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2 http://www.garmin.com/xmlschemas/TrainingCenterDatabasev2.xsd" xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n  <Activities>\n    <Activity Sport="${sport}">\n      <Id>${targetStartTimeStr}</Id>\n      <Lap StartTime="${targetStartTimeStr}">\n        <TotalTimeSeconds>${totalTimeSeconds}</TotalTimeSeconds>\n        <DistanceMeters>${totalDist}</DistanceMeters>\n        <Intensity>Active</Intensity>\n        <TriggerMethod>Manual</TriggerMethod>\n        <Track>\n`;
+                targetPoints.forEach((p) => {
+                    xml += `          <Trackpoint>\n            <Time>${p.time}</Time>\n            <Position>\n              <LatitudeDegrees>${p.lat}</LatitudeDegrees>\n              <LongitudeDegrees>${p.lon}</LongitudeDegrees>\n            </Position>\n            <AltitudeMeters>${p.alt}</AltitudeMeters>\n            <DistanceMeters>${p.dist}</DistanceMeters>\n${(enableHR && p.hr > 0) ? `            <HeartRateBpm>\n              <Value>${p.hr}</Value>\n            </HeartRateBpm>\n` : ''}          </Trackpoint>\n`;
+                });
+                xml += `        </Track>\n      </Lap>\n    </Activity>\n  </Activities>\n</TrainingCenterDatabase>`;
+                return xml;
+            };
+
+            const downloadTCX = () => {
+                const blob = new Blob([xmlOutput], { type: 'application/xml' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `activity_${new Date(startTime).getTime()}.tcx`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            useEffect(() => { generateDemoData(); }, []);
+            useEffect(() => { const xml = generateTCXString(); setXmlOutput(xml); }, [points, sport, startTime, enableHR]);
+
+            const generateDemoData = () => {
+                const demoPoints = [];
+                const start = new Date(startTime);
+                let baseLat = 39.9042, baseLon = 116.4074, baseAlt = 50, baseDist = 0;
+                for (let i = 0; i < 10; i++) {
+                    const pointTime = new Date(start.getTime() + i * 60000);
+                    demoPoints.push({ id: generateId(), time: formatTime(pointTime), lat: (baseLat + i * 0.001).toFixed(6), lon: (baseLon + i * 0.001).toFixed(6), alt: baseAlt, dist: baseDist, hr: 140 + Math.floor(Math.random() * 10) });
+                    baseAlt += Math.random() > 0.5 ? 1 : -1; baseDist += 150;
+                }
+                setPoints(demoPoints);
+            };
+
+            const handleLoopGenerate = async () => {
+                if (points.length < 2) { alert("需要至少2个点作为基础数据。"); return; }
+                setIsGeneratingLoop(true);
+                try {
+                    const basePoints = [...points];
+                    const newFullPoints = [];
+                    const startObj = new Date(startTime);
+                    let currentBaseTime = startObj.getTime();
+                    let currentTotalDist = 0;
+
+                    // Calc base loop distance for pace scaling
+                    let baseLoopDist = 0;
+                    for (let i = 1; i < basePoints.length; i++) {
+                        baseLoopDist += getDistanceFromLatLonInM(parseFloat(basePoints[i - 1].lat), parseFloat(basePoints[i - 1].lon), parseFloat(basePoints[i].lat), parseFloat(basePoints[i].lon));
+                    }
+                    const originalDurationMs = new Date(basePoints[basePoints.length - 1].time).getTime() - new Date(basePoints[0].time).getTime();
+                    let globalSpeedFactor = 1.0;
+                    if (loopConfig.targetPace) {
+                        const [min, sec] = loopConfig.targetPace.split(':').map(Number);
+                        const targetPaceSecPerKm = (min * 60) + (sec || 0);
+                        if (targetPaceSecPerKm > 0 && baseLoopDist > 0) {
+                            const targetDurationSec = (baseLoopDist / 1000) * targetPaceSecPerKm;
+                            globalSpeedFactor = (originalDurationMs / 1000) / targetDurationSec;
+                        }
+                    }
+
+                    const timeDeltas = [];
+                    for (let i = 1; i < basePoints.length; i++) timeDeltas.push(new Date(basePoints[i].time).getTime() - new Date(basePoints[i - 1].time).getTime());
+                    timeDeltas.push(timeDeltas.length > 0 ? timeDeltas[timeDeltas.length - 1] : 60000);
+
+                    let aiStrategy = null;
+                    if (loopConfig.useAI) aiStrategy = await callGeminiForLapStrategy(loopConfig.laps, loopConfig.aiPrompt, userApiKey);
+
+                    for (let lap = 0; lap < loopConfig.laps; lap++) {
+                        const strategy = aiStrategy && aiStrategy[lap] ? aiStrategy[lap] : { speed_factor: 1.0, hr_offset: 0, drift_factor: 1.0 };
+                        const speedFactor = globalSpeedFactor * (strategy.speed_factor || 1.0);
+                        const hrOffset = strategy.hr_offset || 0;
+                        const driftMult = strategy.drift_factor || 1.0;
+                        const lapLatDrift = loopConfig.laneDrift ? (Math.random() - 0.5) * 0.00010 * driftMult : 0;
+                        const lapLonDrift = loopConfig.laneDrift ? (Math.random() - 0.5) * 0.00010 * driftMult : 0;
+
+                        basePoints.forEach((p, idx) => {
+                            const pointTime = new Date(currentBaseTime);
+                            const pointNoiseLat = loopConfig.gpsNoise ? (Math.random() - 0.5) * 0.00002 : 0;
+                            const pointNoiseLon = loopConfig.gpsNoise ? (Math.random() - 0.5) * 0.00002 : 0;
+                            const newLat = (parseFloat(p.lat) + lapLatDrift + pointNoiseLat).toFixed(6);
+                            const newLon = (parseFloat(p.lon) + lapLonDrift + pointNoiseLon).toFixed(6);
+
+                            let distIncrement = 0;
+                            if (idx > 0) distIncrement = getDistanceFromLatLonInM(parseFloat(basePoints[idx - 1].lat), parseFloat(basePoints[idx - 1].lon), parseFloat(p.lat), parseFloat(p.lon));
+                            else if (lap > 0) distIncrement = getDistanceFromLatLonInM(parseFloat(basePoints[basePoints.length - 1].lat), parseFloat(basePoints[basePoints.length - 1].lon), parseFloat(p.lat), parseFloat(p.lon));
+                            currentTotalDist += distIncrement;
+
+                            const hrJitter = Math.floor(Math.random() * 6) - 3;
+                            const baseHr = parseInt(p.hr) || 0;
+                            const newHr = enableHR ? Math.max(60, Math.min(220, baseHr + hrOffset + hrJitter)) : 0;
+
+                            newFullPoints.push({ id: generateId(), time: formatTime(pointTime), lat: newLat, lon: newLon, alt: p.alt, dist: currentTotalDist.toFixed(2), hr: newHr });
+                            if (idx < timeDeltas.length) currentBaseTime += (timeDeltas[idx] / speedFactor);
+                        });
+                    }
+                    setPoints(newFullPoints);
+                    setShowLoopModal(false);
+                } catch (e) { alert("生成出错: " + e.message); } finally { setIsGeneratingLoop(false); }
+            };
+
+            const handleBatchGenerate = async () => {
+                setIsGeneratingBatch(true);
+                try {
+                    const results = [];
+                    const [baseH, baseM] = batchConfig.baseTime.split(':').map(Number);
+                    const templateTotalDist = points.length > 0 ? parseFloat(points[points.length - 1].dist) : 0;
+                    let schedule = null;
+                    if (batchConfig.useAI) schedule = await callGeminiForTrainingSchedule(batchConfig.startDate, batchConfig.endDate, batchConfig.aiPrompt, userApiKey);
+
+                    let generationQueue = [];
+                    if (schedule && Array.isArray(schedule) && schedule.length > 0) {
+                        generationQueue = schedule.map(item => ({ dateObj: new Date(item.date), intensity: item.intensity_factor || 1.0, suffix: item.notes ? `_${item.notes.replace(/\s+/g, '')}` : '' }));
+                    } else {
+                        let current = new Date(batchConfig.startDate);
+                        const end = new Date(batchConfig.endDate);
+                        while (current <= end) {
+                            generationQueue.push({ dateObj: new Date(current), intensity: 1.0, suffix: '' });
+                            current = addDays(current, parseInt(batchConfig.intervalDays));
+                        }
+                    }
+
+                    let jitterAmount = 0;
+                    if (batchConfig.jitterLevel === 'low') jitterAmount = 0.00002;
+                    else if (batchConfig.jitterLevel === 'medium') jitterAmount = 0.00005;
+                    else if (batchConfig.jitterLevel === 'high') jitterAmount = 0.00015;
+
+                    for (const item of generationQueue) {
+                        const varianceDecimal = (batchConfig.distanceVariance || 0) / 100;
+                        const randomDistFactor = 1 + (Math.random() * varianceDecimal * 2 - varianceDecimal);
+                        let targetDistance = templateTotalDist * randomDistFactor;
+                        if (batchConfig.minDistance > 0 && targetDistance < batchConfig.minDistance) targetDistance = parseFloat(batchConfig.minDistance);
+
+                        let filePointsData = [];
+                        let accumulatedDist = 0;
+                        let pIndex = 0;
+
+                        while (accumulatedDist < targetDistance && points.length > 0) {
+                            const p = points[pIndex];
+                            const pointNoiseLat = (Math.random() - 0.5) * 0.00005;
+                            const pointNoiseLon = (Math.random() - 0.5) * 0.00005;
+                            const newLat = (parseFloat(p.lat) + pointNoiseLat).toFixed(6);
+                            const newLon = (parseFloat(p.lon) + pointNoiseLon).toFixed(6);
+
+                            let distInc = 0;
+                            if (filePointsData.length > 0) {
+                                const prev = filePointsData[filePointsData.length - 1];
+                                distInc = getDistanceFromLatLonInM(parseFloat(prev.lat), parseFloat(prev.lon), parseFloat(newLat), parseFloat(newLon));
+                            }
+                            accumulatedDist += distInc;
+                            filePointsData.push({ ...p, id: generateId(), lat: newLat, lon: newLon, dist: accumulatedDist.toFixed(2) });
+                            pIndex++;
+                            if (pIndex >= points.length) pIndex = 0;
+                        }
+
+                        const randomOffsetMinutes = Math.floor(Math.random() * (batchConfig.timeRandomness * 2 + 1)) - batchConfig.timeRandomness;
+                        const fileStartTime = new Date(item.dateObj);
+                        fileStartTime.setHours(baseH, baseM + randomOffsetMinutes, 0, 0);
+
+                        const avgTimePerPointMs = points.length > 1 ? (new Date(points[points.length - 1].time) - new Date(points[0].time)) / (points.length - 1) : 5000;
+                        const dailyLatOffset = (Math.random() - 0.5) * jitterAmount * 2;
+                        const dailyLonOffset = (Math.random() - 0.5) * jitterAmount * 2;
+
+                        const processedPoints = filePointsData.map((p, idx) => {
+                            const relativeTimeMs = idx * avgTimePerPointMs;
+                            const adjustedTimeDiff = relativeTimeMs / item.intensity;
+                            const newPointTime = new Date(fileStartTime.getTime() + adjustedTimeDiff + Math.floor(Math.random() * 500));
+                            let hrBoost = 0;
+                            if (item.intensity > 1.1) hrBoost = 10; else if (item.intensity < 0.9) hrBoost = -10;
+
+                            return {
+                                ...p,
+                                time: formatTime(newPointTime),
+                                lat: (parseFloat(p.lat) + dailyLatOffset).toFixed(6),
+                                lon: (parseFloat(p.lon) + dailyLonOffset).toFixed(6),
+                                hr: enableHR ? Math.max(60, Math.min(220, parseInt(p.hr) + hrBoost + Math.floor(Math.random() * 5) - 2)) : 0
+                            };
+                        });
+
+                        const xml = generateTCXString(processedPoints, fileStartTime);
+                        const dateStr = `${fileStartTime.getFullYear()}${(fileStartTime.getMonth() + 1).toString().padStart(2, '0')}${fileStartTime.getDate().toString().padStart(2, '0')}`;
+                        const timeStr = `${fileStartTime.getHours().toString().padStart(2, '0')}${fileStartTime.getMinutes().toString().padStart(2, '0')}`;
+                        const filename = `activity_${dateStr}_${timeStr}${item.suffix}.tcx`;
+                        const actualDist = processedPoints.length > 0 ? processedPoints[processedPoints.length - 1].dist : 0;
+
+                        results.push({ filename, xml, date: fileStartTime.toLocaleString(), info: `距离: ${actualDist}m${item.intensity !== 1 ? `, 强度: ${item.intensity}` : ''}` });
+                    }
+                    setBatchResults(results);
+                } catch (e) { alert("批量生成出错: " + e.message); } finally { setIsGeneratingBatch(false); }
+            };
+
+            const downloadBatchItem = (item) => {
+                const blob = new Blob([item.xml], { type: 'application/xml' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = item.filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            const downloadAllBatch = async () => {
+                for (let i = 0; i < batchResults.length; i++) {
+                    downloadBatchItem(batchResults[i]);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            };
+
+            const handleAIRouteGenerate = async () => {
+                if (!aiRoutePrompt.trim()) return;
+                setIsGeneratingRoute(true);
+                try {
+                    let startRef = null;
+                    if (points.length > 0) startRef = `${points[points.length - 1].lat}, ${points[points.length - 1].lon}`;
+                    const coords = await callGeminiForRoute(aiRoutePrompt, startRef, userApiKey);
+                    if (!Array.isArray(coords) || coords.length === 0) { alert("AI 生成失败，请重试。"); setIsGeneratingRoute(false); return; }
+
+                    const newPoints = [];
+                    let baseTime = points.length > 0 ? new Date(points[points.length - 1].time).getTime() : new Date(startTime).getTime();
+                    let prevLat = points.length > 0 ? parseFloat(points[points.length - 1].lat) : null;
+                    let prevLon = points.length > 0 ? parseFloat(points[points.length - 1].lon) : null;
+                    let currentTotalDist = points.length > 0 ? parseFloat(points[points.length - 1].dist) : 0;
+                    const speed = 2.8;
+
+                    coords.forEach((coord) => {
+                        const lat = parseFloat(coord.lat), lon = parseFloat(coord.lon);
+                        let dist = 0, timeDiff = 60000;
+                        if (prevLat !== null && prevLon !== null) {
+                            dist = getDistanceFromLatLonInM(prevLat, prevLon, lat, lon);
+                            currentTotalDist += dist;
+                            timeDiff = (dist / speed) * 1000; if (timeDiff < 5000) timeDiff = 5000;
+                        } else { prevLat = lat; prevLon = lon; }
+                        baseTime += timeDiff;
+                        newPoints.push({ id: generateId(), time: formatTime(new Date(baseTime)), lat: lat.toFixed(6), lon: lon.toFixed(6), alt: 0, dist: currentTotalDist.toFixed(2), hr: enableHR ? (135 + Math.floor(Math.random() * 25)) : 0 });
+                        prevLat = lat; prevLon = lon;
+                    });
+                    setPoints(points.length > 0 ? [...points, ...newPoints] : newPoints);
+                    setShowAIRouteModal(false);
+                    setAiRoutePrompt('');
+                } catch (e) { alert("Error: " + e.message); } finally { setIsGeneratingRoute(false); }
+            };
+
+            const handleImport = () => {
+                const lines = importText.split('\n');
+                const newPoints = [];
+                const start = new Date(startTime);
+                let totalDist = 0, prevLat = null, prevLon = null;
+                const regex = /(\d+)\.\s*([-+]?[0-9]*\.?[0-9]+)\s*,\s*([-+]?[0-9]*\.?[0-9]+)/;
+                let validCount = 0;
+                lines.forEach((line) => {
+                    const match = line.match(regex);
+                    if (match) {
+                        const lat = parseFloat(match[2]), lon = parseFloat(match[3]);
+                        let dist = 0;
+                        if (prevLat !== null && prevLon !== null) { dist = getDistanceFromLatLonInM(prevLat, prevLon, lat, lon); totalDist += dist; }
+                        newPoints.push({ id: generateId(), time: formatTime(new Date(start.getTime() + validCount * 30000)), lat: lat.toFixed(6), lon: lon.toFixed(6), alt: 0, dist: totalDist.toFixed(2), hr: enableHR ? (130 + Math.floor(Math.random() * 30)) : 0 });
+                        prevLat = lat; prevLon = lon; validCount++;
+                    }
+                });
+                if (newPoints.length > 0) { setPoints(newPoints); setShowImport(false); setImportText(''); } else { alert('格式无效。'); }
+            };
+
+            const randomizeHeartRates = () => { if (enableHR) setPoints(points.map(p => ({ ...p, hr: 120 + Math.floor(Math.random() * 50) }))); };
+            const addPoint = () => {
+                const lastPoint = points[points.length - 1];
+                const newTime = lastPoint ? new Date(new Date(lastPoint.time).getTime() + 60000).toISOString() : new Date().toISOString();
+                setPoints([...points, { id: generateId(), time: newTime, lat: lastPoint ? lastPoint.lat : '0.000000', lon: lastPoint ? lastPoint.lon : '0.000000', alt: 0, dist: 0, hr: enableHR ? 140 : 0 }]);
+            };
+            const updatePoint = (id, field, value) => { setPoints(points.map((p) => (p.id === id ? { ...p, [field]: value } : p))); };
+            const deletePoint = (id) => { setPoints(points.filter((p) => p.id !== id)); };
+
+            return (
+                <div className="min-h-screen bg-slate-50 p-4 font-sans text-slate-800">
+                    <div className="max-w-7xl mx-auto space-y-6">
+                        <header className="flex flex-col md:flex-row items-start md:items-center justify-between bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
+                            <div className="flex items-center gap-3">
+                                <div className="p-3 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg text-white shadow-md"><Icons.Activity size={24} /></div>
+                                <div><h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">TCX 生成器 <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-200 flex items-center gap-1"><Icons.Sparkles size={10} /> AI 增强版</span></h1><p className="text-slate-500 text-sm">创建兼容 Garmin、Strava 的运动轨迹文件</p></div>
+                            </div>
+                            <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
+                                <button onClick={() => setShowMapPicker(true)} className="flex items-center gap-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-3 rounded-lg font-medium transition-colors shadow-sm"><Icons.MapPin size={18} className="text-red-500" /><span className="hidden sm:inline">地图选点</span></button>
+                                <button onClick={() => setShowLoopModal(true)} className="flex items-center gap-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-3 rounded-lg font-medium transition-colors shadow-sm"><Icons.Repeat size={18} className="text-orange-500" /><span className="hidden sm:inline">跑圈生成</span></button>
+                                <button onClick={() => setShowBatchModal(true)} className="flex items-center gap-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-3 rounded-lg font-medium transition-colors shadow-sm"><Icons.Layers size={18} className="text-purple-600" /><span className="hidden sm:inline">批量生成</span></button>
+                                <button onClick={downloadTCX} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium transition-colors shadow-sm flex-1 md:flex-none justify-center"><Icons.Download size={18} />下载当前</button>
+                            </div>
+                        </header>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div className="space-y-6">
+                                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-6">
+                                    <div>
+                                        <h2 className="text-lg font-semibold flex items-center gap-2 mb-4"><Icons.RefreshCw size={18} className="text-blue-600" />基础设置</h2>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div><label className="block text-sm font-medium text-slate-600 mb-1">开始时间</label><input type="datetime-local" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none" /></div>
+                                            <div><label className="block text-sm font-medium text-slate-600 mb-1">运动类型</label><select value={sport} onChange={(e) => setSport(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none"><option value="Running">跑步 (Running)</option><option value="Biking">骑行 (Biking)</option><option value="Other">其他 (Other)</option></select></div>
+                                        </div>
+                                    </div>
+                                    <div className="border-t border-slate-100 pt-4">
+                                        <h3 className="text-sm font-medium text-slate-900 flex items-center gap-2 mb-3"><Icons.KeyRound size={16} className="text-indigo-500" /> AI 配置 <span className="text-xs text-slate-400 font-normal">(可选)</span></h3>
+                                        <input type="password" value={userApiKey} onChange={(e) => setUserApiKey(e.target.value)} placeholder="输入 Gemini API Key..." className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+                                        <div className="flex items-center justify-between bg-slate-50 p-3 rounded-lg">
+                                            <div className="flex items-center gap-2">{enableHR ? <Icons.ToggleRight className="text-blue-600" size={24} /> : <Icons.ToggleLeft className="text-slate-400" size={24} />}<span className="text-sm font-medium text-slate-700">心率数据</span></div>
+                                            <button onClick={() => setEnableHR(!enableHR)} className={`text-xs px-2 py-1 rounded border ${enableHR ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-500'}`}>{enableHR ? '开启' : '关闭'}</button>
+                                        </div>
+                                        <div className="flex items-center justify-between bg-slate-50 p-3 rounded-lg">
+                                            <span className="text-sm font-medium text-slate-700 flex items-center gap-2"><Icons.Zap size={16} className="text-orange-500" />随机心率</span>
+                                            <button onClick={randomizeHeartRates} disabled={!enableHR} className="text-xs bg-white border border-slate-200 hover:bg-orange-50 hover:border-orange-200 hover:text-orange-600 text-slate-600 px-3 py-1 rounded transition-colors disabled:opacity-50">生成</button>
+                                        </div>
+                                    </div>
+                                    <div className="pt-2 border-t border-slate-100 flex gap-4">
+                                        <button onClick={generateDemoData} className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"><Icons.Play size={14} />重置演示数据</button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[600px] relative">
+                                    {showImport && (
+                                        <div className="absolute inset-0 z-20 bg-white/95 backdrop-blur-sm flex flex-col p-6 animate-in fade-in zoom-in-95 duration-200">
+                                            <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-semibold flex items-center gap-2"><Icons.Upload size={18} className="text-blue-600" />批量导入坐标</h3><button onClick={() => setShowImport(false)} className="text-slate-400 hover:text-slate-600"><Icons.X size={20} /></button></div>
+                                            <textarea value={importText} onChange={(e) => setImportText(e.target.value)} placeholder="1. 36.155974, 120.399380..." className="flex-1 w-full border border-slate-200 rounded-lg p-4 text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none resize-none mb-4" />
+                                            <div className="flex justify-end gap-3"><button onClick={() => setShowImport(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm">取消</button><button onClick={handleImport} className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium">确认导入</button></div>
+                                        </div>
+                                    )}
+                                    {showLoopModal && (
+                                        <div className="absolute inset-0 z-30 bg-white flex flex-col animate-in slide-in-from-bottom-4 duration-300">
+                                            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50"><h3 className="text-lg font-semibold flex items-center gap-2 text-slate-800"><Icons.Repeat size={18} className="text-orange-500" />跑圈生成器</h3><button onClick={() => setShowLoopModal(false)} className="text-slate-400 hover:text-slate-600"><Icons.X size={20} /></button></div>
+                                            <div className="p-6 space-y-6 overflow-auto">
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div><label className="block text-sm font-medium text-slate-600 mb-1">生成圈数</label><input type="number" min="2" max="100" value={loopConfig.laps} onChange={(e) => setLoopConfig({ ...loopConfig, laps: parseInt(e.target.value) || 1 })} className="w-full border border-slate-300 rounded-lg p-2 text-sm" /></div>
+                                                    <div><label className="block text-sm font-medium text-slate-600 mb-1">目标配速 (分:秒)</label><input type="text" placeholder="如 5:30" value={loopConfig.targetPace} onChange={(e) => setLoopConfig({ ...loopConfig, targetPace: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2 text-sm" /></div>
+                                                </div>
+                                                <div className="border border-orange-100 bg-orange-50/50 rounded-lg p-4 space-y-3">
+                                                    <div className="flex items-center justify-between"><div className="flex items-center gap-2 font-medium text-orange-900 text-sm"><Icons.Bot size={16} />AI 智能策略</div><button onClick={() => setLoopConfig({ ...loopConfig, useAI: !loopConfig.useAI })}>{loopConfig.useAI ? <Icons.ToggleRight className="text-orange-600" size={24} /> : <Icons.ToggleLeft className="text-slate-400" size={24} />}</button></div>
+                                                    {loopConfig.useAI && <div className="animate-in fade-in slide-in-from-top-2"><label className="block text-xs font-medium text-slate-600 mb-1">描述跑法</label><textarea value={loopConfig.aiPrompt} onChange={(e) => setLoopConfig({ ...loopConfig, aiPrompt: e.target.value })} className="w-full border border-orange-200 rounded-md p-2 text-sm h-16 focus:ring-1 focus:ring-orange-500 outline-none" placeholder="描述策略..." /><p className="text-xs text-orange-700 mt-1">AI 将自动控制每一圈的配速。</p></div>}
+                                                </div>
+                                                <div className="space-y-2 pt-2 border-t border-slate-100">
+                                                    <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50"><input type="checkbox" checked={loopConfig.laneDrift} onChange={(e) => setLoopConfig({ ...loopConfig, laneDrift: e.target.checked })} className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500" /><div className="text-sm font-medium text-slate-700">模拟道次漂移</div></label>
+                                                    <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50"><input type="checkbox" checked={loopConfig.gpsNoise} onChange={(e) => setLoopConfig({ ...loopConfig, gpsNoise: e.target.checked })} className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500" /><div className="text-sm font-medium text-slate-700">添加 GPS 噪点</div></label>
+                                                </div>
+                                                <div className="flex gap-3 pt-4"><button onClick={handleLoopGenerate} disabled={isGeneratingLoop} className="flex-1 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium shadow-sm transition-colors flex justify-center items-center gap-2">{isGeneratingLoop ? <Icons.Loader2 className="animate-spin" size={18} /> : <Icons.Play size={18} />}{isGeneratingLoop ? "AI 思考中..." : "开始生成"}</button></div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {showMapPicker && <MapPicker onClose={() => setShowMapPicker(false)} />}
+                                    {showBatchModal && (
+                                        <div className="absolute inset-0 z-30 bg-white flex flex-col animate-in slide-in-from-bottom-4 duration-300">
+                                            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50"><h3 className="text-lg font-semibold flex items-center gap-2 text-slate-800"><Icons.Layers size={18} className="text-purple-600" />批量生成器</h3><button onClick={() => setShowBatchModal(false)} className="text-slate-400 hover:text-slate-600"><Icons.X size={20} /></button></div>
+                                            <div className="flex-1 overflow-auto p-6 space-y-6">
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div><label className="block text-sm font-medium text-slate-600 mb-1">开始日期</label><input type="date" value={batchConfig.startDate} onChange={(e) => setBatchConfig({ ...batchConfig, startDate: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2 text-sm" /></div>
+                                                    <div><label className="block text-sm font-medium text-slate-600 mb-1">结束日期</label><input type="date" value={batchConfig.endDate} onChange={(e) => setBatchConfig({ ...batchConfig, endDate: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2 text-sm" /></div>
+                                                </div>
+                                                <div className="border border-purple-100 bg-purple-50/50 rounded-lg p-4 space-y-3">
+                                                    <div className="flex items-center justify-between"><div className="flex items-center gap-2 font-medium text-purple-900 text-sm"><Icons.Bot size={16} />AI 训练计划</div><button onClick={() => setBatchConfig({ ...batchConfig, useAI: !batchConfig.useAI })}>{batchConfig.useAI ? <Icons.ToggleRight className="text-purple-600" size={24} /> : <Icons.ToggleLeft className="text-slate-400" size={24} />}</button></div>
+                                                    {batchConfig.useAI && <div className="animate-in fade-in slide-in-from-top-2"><label className="block text-xs font-medium text-slate-600 mb-1">训练目标描述</label><textarea value={batchConfig.aiPrompt} onChange={(e) => setBatchConfig({ ...batchConfig, aiPrompt: e.target.value })} className="w-full border border-purple-200 rounded-md p-2 text-sm h-16 focus:ring-1 focus:ring-purple-500 outline-none" placeholder="描述计划..." /><p className="text-xs text-purple-700 mt-1">AI 将为你生成每日不同的强度安排。</p></div>}
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div><label className="block text-sm font-medium text-slate-600 mb-1">基准时间</label><input type="time" value={batchConfig.baseTime} onChange={(e) => setBatchConfig({ ...batchConfig, baseTime: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2 text-sm" /></div>
+                                                    <div><label className="block text-sm font-medium text-slate-600 mb-1">时间波动 (分)</label><input type="number" min="0" max="360" value={batchConfig.timeRandomness} onChange={(e) => setBatchConfig({ ...batchConfig, timeRandomness: parseInt(e.target.value) || 0 })} className="w-full border border-slate-300 rounded-lg p-2 text-sm" /></div>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div><label className="block text-sm font-medium text-slate-600 mb-1">距离浮动 (%)</label><input type="number" min="0" max="100" value={batchConfig.distanceVariance} onChange={(e) => setBatchConfig({ ...batchConfig, distanceVariance: parseInt(e.target.value) || 0 })} className="w-full border border-slate-300 rounded-lg p-2 text-sm" placeholder="0" /></div>
+                                                    <div><label className="block text-sm font-medium text-slate-600 mb-1">最低距离 (米)</label><input type="number" min="0" value={batchConfig.minDistance} onChange={(e) => setBatchConfig({ ...batchConfig, minDistance: parseInt(e.target.value) || 0 })} className="w-full border border-slate-300 rounded-lg p-2 text-sm" placeholder="0" /></div>
+                                                </div>
+                                                {!batchConfig.useAI && <div className="grid grid-cols-2 gap-4 animate-in fade-in">
+                                                    <div><label className="block text-sm font-medium text-slate-600 mb-1">生成间隔 (天)</label><input type="number" min="1" value={batchConfig.intervalDays} onChange={(e) => setBatchConfig({ ...batchConfig, intervalDays: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2 text-sm" /></div>
+                                                    <div><label className="block text-sm font-medium text-slate-600 mb-1">位置偏移</label><select value={batchConfig.jitterLevel} onChange={(e) => setBatchConfig({ ...batchConfig, jitterLevel: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2 text-sm"><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></div>
+                                                </div>}
+                                                <button onClick={handleBatchGenerate} disabled={isGeneratingBatch} className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium shadow-sm transition-colors flex justify-center items-center gap-2">{isGeneratingBatch ? <Icons.Loader2 className="animate-spin" size={18} /> : <Icons.Layers size={18} />}{isGeneratingBatch ? "AI 规划中..." : `开始生成 (${batchResults.length > 0 ? '重新' : ''})`}</button>
+                                                {batchResults.length > 0 && (
+                                                    <div className="mt-6 border-t border-slate-100 pt-6">
+                                                        <div className="flex justify-between items-center mb-3"><h4 className="font-medium text-slate-700">生成结果 ({batchResults.length})</h4><button onClick={downloadAllBatch} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200 border border-green-200">全部下载</button></div>
+                                                        <div className="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden max-h-60 overflow-y-auto">
+                                                            <table className="w-full text-sm text-left"><thead className="bg-slate-100 text-slate-500 sticky top-0"><tr><th className="p-2 font-medium">日期</th><th className="p-2 font-medium">文件名</th><th className="p-2 font-medium text-right">信息</th><th className="p-2 text-right">操作</th></tr></thead><tbody className="divide-y divide-slate-200">{batchResults.map((res, idx) => (<tr key={idx} className="hover:bg-white"><td className="p-2 text-slate-600 whitespace-nowrap text-xs">{res.date}</td><td className="p-2 font-mono text-xs text-slate-500 truncate max-w-[120px]" title={res.filename}>{res.filename}</td><td className="p-2 text-xs text-slate-500 text-right">{res.info}</td><td className="p-2 text-right"><button onClick={() => downloadBatchItem(res)} className="text-blue-600 hover:underline text-xs">下载</button></td></tr>))}</tbody></table>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {showAIRouteModal && (
+                                        <div className="absolute inset-0 z-20 bg-white/95 backdrop-blur-sm flex flex-col p-6 animate-in fade-in zoom-in-95 duration-200">
+                                            <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-semibold flex items-center gap-2 text-indigo-700"><Icons.Sparkles size={18} />AI 智能路线生成</h3><button onClick={() => setShowAIRouteModal(false)} className="text-slate-400 hover:text-slate-600"><Icons.X size={20} /></button></div>
+                                            <div className="flex-1 flex flex-col justify-center items-center text-center max-w-md mx-auto w-full"><p className="text-slate-600 mb-4">描述你想要的路线，AI 将为你自动规划坐标。</p><textarea value={aiRoutePrompt} onChange={(e) => setAiRoutePrompt(e.target.value)} placeholder="在此输入路线描述..." disabled={isGeneratingRoute} className="w-full h-32 border border-slate-200 rounded-lg p-4 text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none mb-4 shadow-sm" /><button onClick={handleAIRouteGenerate} disabled={isGeneratingRoute || !aiRoutePrompt.trim()} className="w-full px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700 rounded-lg text-sm font-medium shadow-md flex items-center justify-center gap-2 disabled:opacity-70 transition-all">{isGeneratingRoute ? <><Icons.Loader2 className="animate-spin" size={18} />AI 正在规划...</> : <><Icons.Sparkles size={18} />开始生成</>}</button></div>
+                                        </div>
+                                    )}
+                                    <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                                        <h2 className="font-semibold text-slate-700">轨迹点 ({points.length})</h2>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setShowAIRouteModal(true)} className="flex items-center gap-1 bg-indigo-50 border border-indigo-200 text-indigo-700 px-3 py-1.5 rounded-md hover:bg-indigo-100 transition-colors text-sm font-medium"><Icons.Sparkles size={14} />AI 生成</button>
+                                            <button onClick={() => setShowImport(true)} className="flex items-center gap-1 bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-md hover:bg-slate-50 transition-colors text-sm font-medium"><Icons.Upload size={14} /></button>
+                                            <button onClick={addPoint} className="flex items-center gap-1 bg-blue-100 text-blue-700 px-3 py-1.5 rounded-md hover:bg-blue-200 transition-colors text-sm font-medium"><Icons.Plus size={16} />添加</button>
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 overflow-auto p-0 bg-white">
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="bg-slate-50 text-slate-500 sticky top-0 z-10 shadow-sm"><tr><th className="p-3 font-medium">时间</th><th className="p-3 font-medium">纬度</th><th className="p-3 font-medium">经度</th><th className="p-3 font-medium">HR</th><th className="p-3 font-medium text-center">操作</th></tr></thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {points.map((point) => (
+                                                    <tr key={point.id} className="hover:bg-slate-50 group">
+                                                        <td className="p-2"><input type="text" value={point.time} onChange={(e) => updatePoint(point.id, 'time', e.target.value)} className="w-full bg-transparent border-none focus:ring-1 focus:ring-blue-300 rounded px-1 text-xs font-mono text-slate-600" /></td>
+                                                        <td className="p-2"><input type="number" step="0.000001" value={point.lat} onChange={(e) => updatePoint(point.id, 'lat', e.target.value)} className="w-24 bg-transparent border-none focus:ring-1 focus:ring-blue-300 rounded px-1 text-xs" /></td>
+                                                        <td className="p-2"><input type="number" step="0.000001" value={point.lon} onChange={(e) => updatePoint(point.id, 'lon', e.target.value)} className="w-24 bg-transparent border-none focus:ring-1 focus:ring-blue-300 rounded px-1 text-xs" /></td>
+                                                        <td className="p-2"><input type="number" value={point.hr} disabled={!enableHR} onChange={(e) => updatePoint(point.id, 'hr', e.target.value)} className={`w-12 bg-transparent border-none focus:ring-1 focus:ring-blue-300 rounded px-1 text-xs ${!enableHR ? 'text-slate-300' : ''}`} /></td>
+                                                        <td className="p-2 text-center"><button onClick={() => deletePoint(point.id)} className="text-slate-300 hover:text-red-500 transition-colors p-1"><Icons.Trash2 size={14} /></button></td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                        {points.length === 0 && <div className="p-8 text-center text-slate-400 flex flex-col items-center gap-2 mt-10"><Icons.Sparkles className="text-indigo-200" size={48} /><p>暂无数据</p></div>}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex flex-col h-full">
+                                <div className="bg-slate-800 text-slate-100 rounded-xl shadow-lg overflow-hidden flex flex-col h-[750px] border border-slate-700">
+                                    <div className="p-4 bg-slate-900 border-b border-slate-700 flex justify-between items-center"><h2 className="font-mono font-semibold flex items-center gap-2 text-sm"><Icons.FileCode size={16} className="text-yellow-500" />XML 预览</h2><span className="text-xs text-slate-400 bg-slate-800 px-2 py-1 rounded">Read Only</span></div>
+                                    <textarea readOnly value={xmlOutput} className="flex-1 bg-slate-800 p-4 font-mono text-xs text-green-400 resize-none focus:outline-none leading-5 w-full" spellCheck="false" />
+                                </div>
+                                <div className="mt-4 text-center text-slate-400 text-sm"><p>生成的文件符合 Garmin Training Center Database v2 Schema</p></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
